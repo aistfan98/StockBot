@@ -42,10 +42,16 @@ export class StockBotStack extends Stack {
     // 4️⃣ Lambda: Invocation / Orchestrator
     const invocationLambda = new lambda.Function(this, "InvocationLambda", {
       functionName: "StockbotInvocationLambda",
-      runtime: lambda.Runtime.PYTHON_3_12,
+      runtime: lambda.Runtime.PYTHON_3_13, // This is the Python runtime I've been using to test locally
       handler: "index.handler",
       code: lambda.Code.fromAsset(
-        path.join(__dirname, "..", "lambda", "invocation")
+        path.join(
+          __dirname,
+          "..",
+          "lambda",
+          "invocation",
+          "invocation_lambda_package.zip"
+        )
       ),
       timeout: Duration.seconds(60),
       memorySize: 512,
