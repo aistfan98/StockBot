@@ -39,20 +39,23 @@ export class StockBotStack extends Stack {
       },
     });
 
+    // Use a Lambda layer for Strands dependencies so that we don't need to worry about rebuilding it
+    // on every update of our Python files
+    const strandsLayer = lambda.LayerVersion.fromLayerVersionArn(
+      this,
+      "StockBot Strands Layer",
+      "arn:aws:lambda:us-east-1:794038252242:layer:stockbot-strands-layer:3"
+    );
+
     // 4️⃣ Lambda: Invocation / Orchestrator
     const invocationLambda = new lambda.Function(this, "InvocationLambda", {
       functionName: "StockbotInvocationLambda",
       runtime: lambda.Runtime.PYTHON_3_13, // This is the Python runtime I've been using to test locally
       handler: "index.handler",
       code: lambda.Code.fromAsset(
-        path.join(
-          __dirname,
-          "..",
-          "lambda",
-          "invocation",
-          "invocation_lambda_package.zip"
-        )
+        path.join(__dirname, "..", "lambda", "invocation")
       ),
+      layers: [strandsLayer],
       timeout: Duration.seconds(60),
       memorySize: 512,
       environment: {
