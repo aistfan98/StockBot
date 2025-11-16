@@ -7,6 +7,7 @@ import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 
 export class StockBotStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -39,40 +40,33 @@ export class StockBotStack extends Stack {
       },
     });
 
-    // Use a Lambda layer for Strands dependencies so that we don't need to worry about rebuilding it
-    // on every update of our Python files
-    const strandsLayer = lambda.LayerVersion.fromLayerVersionArn(
-      this,
-      "StockBot Strands Layer",
-      "arn:aws:lambda:us-east-1:794038252242:layer:stockbot-strands-layer:3"
-    );
+    // Create a secret to store the Finnhub API key
+    const finnhubSecret = new secretsmanager.Secret(this, "FinnhubApiKey", {
+      secretName: "FinnhubApiKey",
+      description: "API key used by StockBot to call Finnhub",
+    });
 
     // 4️⃣ Lambda: Invocation / Orchestrator
     const invocationLambda = new lambda.Function(this, "InvocationLambda", {
       functionName: "StockbotInvocationLambda",
-      runtime: lambda.Runtime.PYTHON_3_13, // This is the Python runtime I've been using to test locally
+      runtime: lambda.Runtime.PYTHON_3_12,
       handler: "index.handler",
       code: lambda.Code.fromAsset(
-        path.join(__dirname, "..", "lambda", "invocation")
+        path.join(
+          __dirname,
+          "..",
+          "lambda",
+          "invocation",
+          "deployed_assets.zip"
+        )
       ),
-      layers: [strandsLayer],
-      timeout: Duration.seconds(60),
+      timeout: Duration.seconds(900),
       memorySize: 512,
       environment: {
         RULES_BUCKET_NAME: rulesBucket.bucketName,
-        MCP_FUNCTION_NAME: "StockBotMCPLambda",
         NOTIFICATION_FUNCTION_NAME: "StockBotNotificationLambda",
+        FINNHUB_API_KEY_SECRET_ARN: finnhubSecret.secretArn,
       },
-    });
-
-    // 5️⃣ Lambda: MCP (data fetcher)
-    const mcpLambda = new lambda.Function(this, "MCPLambda", {
-      functionName: "StockBotMCPLambda",
-      runtime: lambda.Runtime.PYTHON_3_12,
-      handler: "index.handler",
-      code: lambda.Code.fromAsset(path.join(__dirname, "..", "lambda", "mcp")),
-      timeout: Duration.seconds(60),
-      memorySize: 512,
     });
 
     // Grant all necessary invocation Lambda permissions
@@ -86,8 +80,8 @@ export class StockBotStack extends Stack {
         resources: ["*"],
       })
     );
-    mcpLambda.grantInvoke(invocationLambda);
     notificationLambda.grantInvoke(invocationLambda);
+    finnhubSecret.grantRead(invocationLambda);
 
     // Grant all necessary notification Lambda permissions
     alertsTopic.grantPublish(notificationLambda);
