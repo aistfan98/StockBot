@@ -14,6 +14,6 @@ stockbot_mcp_client = MCPClient(lambda: stdio_client(
 def invoke_agent(prompt):
     with stockbot_mcp_client:
         tools = stockbot_mcp_client.list_tools_sync()
-        agent = Agent(tools=tools)
+        agent = Agent(tools=tools, model="global.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
         return agent(prompt)
