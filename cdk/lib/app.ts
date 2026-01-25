@@ -1,4 +1,4 @@
-import { Duration, Stack, StackProps } from "aws-cdk-lib";
+import { Duration, Stack, StackProps, RemovalPolicy } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import * as path from "path";
 import * as s3 from "aws-cdk-lib/aws-s3";
@@ -8,6 +8,7 @@ import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 
 export class StockBotStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -20,23 +21,35 @@ export class StockBotStack extends Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
     });
 
-    // 2️⃣ SNS Topic for outbound alerts
+    // 2️⃣ DynamoDB table for portfolio history
+    const portfolioTable = new dynamodb.Table(this, "PortfolioHistoryTable", {
+      tableName: "StockBotPortfolios",
+      partitionKey: { name: "portfolio_id", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "data_date", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+      pointInTimeRecovery: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    // 3️⃣ SNS Topic for outbound alerts
     const alertsTopic = new sns.Topic(this, "TradeAlertsTopic", {
       displayName: "StockBot Trade Recommendations",
     });
 
-    // 3️⃣ Lambda: Notification
-    const notificationLambda = new lambda.Function(this, "NotificationLambda", {
-      functionName: "StockBotNotificationLambda",
+    // 4️⃣ Lambda: Portfolio Processor (email -> parse -> store)
+    const portfolioProcessorLambda = new lambda.Function(this, "PortfolioProcessorLambda", {
+      functionName: "StockBotPortfolioProcessorLambda",
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "index.handler",
       code: lambda.Code.fromAsset(
-        path.join(__dirname, "..", "lambda", "notification")
+        path.join(__dirname, "..", "lambda", "portfolio_processor")
       ),
-      timeout: Duration.seconds(30),
+      timeout: Duration.seconds(60),
       memorySize: 256,
       environment: {
         TOPIC_ARN: alertsTopic.topicArn,
+        PORTFOLIO_TABLE_NAME: portfolioTable.tableName,
       },
     });
 
@@ -46,7 +59,7 @@ export class StockBotStack extends Stack {
       description: "API key used by StockBot to call Finnhub",
     });
 
-    // 4️⃣ Lambda: Invocation / Orchestrator
+    // 5️⃣ Lambda: Invocation / Orchestrator
     const invocationLambda = new lambda.Function(this, "InvocationLambda", {
       functionName: "StockbotInvocationLambda",
       runtime: lambda.Runtime.PYTHON_3_12,
@@ -64,7 +77,7 @@ export class StockBotStack extends Stack {
       memorySize: 512,
       environment: {
         RULES_BUCKET_NAME: rulesBucket.bucketName,
-        NOTIFICATION_FUNCTION_NAME: "StockBotNotificationLambda",
+        PROCESSOR_FUNCTION_NAME: "StockBotPortfolioProcessorLambda",
         FINNHUB_API_KEY_SECRET_ARN: finnhubSecret.secretArn,
       },
     });
@@ -80,11 +93,12 @@ export class StockBotStack extends Stack {
         resources: ["*"],
       })
     );
-    notificationLambda.grantInvoke(invocationLambda);
+    portfolioProcessorLambda.grantInvoke(invocationLambda);
     finnhubSecret.grantRead(invocationLambda);
 
-    // Grant all necessary notification Lambda permissions
-    alertsTopic.grantPublish(notificationLambda);
+    // Grant all necessary portfolio processor Lambda permissions
+    alertsTopic.grantPublish(portfolioProcessorLambda);
+    portfolioTable.grantWriteData(portfolioProcessorLambda);
 
     // 6️⃣ EventBridge rule – daily at 14:00 UTC, Mon‑Fri
     const scheduleRule = new events.Rule(this, "WeeklyTriggerRule", {
