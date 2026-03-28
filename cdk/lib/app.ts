@@ -59,6 +59,12 @@ export class StockBotStack extends Stack {
       description: "API key used by StockBot to call Finnhub",
     });
 
+    // Create a secret to store the Tavily API key
+    const tavilySecret = new secretsmanager.Secret(this, "TavilyApiKey", {
+      secretName: "TavilyApiKey",
+      description: "API key used by StockBot to call Tavily",
+    });
+
     // 5️⃣ Lambda: Invocation / Orchestrator
     const invocationLambda = new lambda.Function(this, "InvocationLambda", {
       functionName: "StockbotInvocationLambda",
@@ -79,6 +85,7 @@ export class StockBotStack extends Stack {
         RULES_BUCKET_NAME: rulesBucket.bucketName,
         PROCESSOR_FUNCTION_NAME: "StockBotPortfolioProcessorLambda",
         FINNHUB_API_KEY_SECRET_ARN: finnhubSecret.secretArn,
+        TAVILY_API_KEY_SECRET_ARN: tavilySecret.secretArn,
       },
     });
 
@@ -95,6 +102,7 @@ export class StockBotStack extends Stack {
     );
     portfolioProcessorLambda.grantInvoke(invocationLambda);
     finnhubSecret.grantRead(invocationLambda);
+    tavilySecret.grantRead(invocationLambda);
 
     // Grant all necessary portfolio processor Lambda permissions
     alertsTopic.grantPublish(portfolioProcessorLambda);

@@ -1,17 +1,22 @@
-import os, json
+import os
+import json
+import sys
 import requests
 import boto3
 from mcp.server.fastmcp import FastMCP
+from tavily import TavilyClient
 
 secrets_manager_client = boto3.client("secretsmanager", region_name="us-east-1")
 mcp = FastMCP("lambda-mcp")
 
-def get_finnub_api_key():
-    secret_arn = os.environ["FINNHUB_API_KEY_SECRET_ARN"]
+def get_aws_secrets_manager_credential(env_var):
+    secret_arn = os.environ[env_var]
     response = secrets_manager_client.get_secret_value(SecretId=secret_arn)
     return response["SecretString"]
 
-FINNHUB_API_KEY = get_finnub_api_key()
+FINNHUB_API_KEY = get_aws_secrets_manager_credential("FINNHUB_API_KEY_SECRET_ARN")
+TAVILY_API_KEY = get_aws_secrets_manager_credential("TAVILY_API_KEY_SECRET_ARN")
+tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
 
 def call_finnhub(url):
     try:
@@ -215,6 +220,33 @@ def check_company_financials(stock_symbol):
     }
 
     return desired_fields
+
+# This MCP tool offers generic web search outside of Finnhub's curated
+# financial news
+@mcp.tool()
+def search_web(query):
+    print(f"Searching the web with query '{query}'", file=sys.stderr)
+    return tavily_client.search(query)
+
+# This MCP tool can be used to extract content from a specific URL to
+# assist in web scraping
+@mcp.tool()
+def extract_webpage(url):
+    return tavily_client.extract(url)
+
+# This MCP tool can be used to recursively crawl the internet, starting
+# with a source url and a set of natural languageinstructions to guide
+# the subsequent crawl
+@mcp.tool()
+def crawl_web(url, instructions = "Recursively find all web pages linked to this one"):
+    return tavily_client.crawl(url, instructions)
+
+# This MCP tool can be used to traverse websites like a graph and explore
+# hundreds of paths in parallel with intelligent discovery to generate
+# comprehensive site maps
+@mcp.tool()
+def map_webpages(url):
+    return tavily_client.map(url)
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
