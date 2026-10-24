@@ -2,3 +2,4 @@ dist
 cdk.out
 node_modules
 .DS_Store
+lambda/invocation/deployed_assets*

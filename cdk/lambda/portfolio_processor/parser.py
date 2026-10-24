@@ -31,6 +31,14 @@ ERROR HANDLING STRATEGY:
 """
 
 
+def trim_preamble(raw_output: str) -> str:
+    """Remove any text before the 'StockBot here' greeting."""
+    match = re.search(r"\*{0,2}StockBot here", raw_output, re.IGNORECASE)
+    if match:
+        return raw_output[match.start():]
+    return raw_output
+
+
 def extract_market_context(raw_output: str) -> str:
     """
     Extract market context/summary from the AI output.
@@ -275,6 +283,8 @@ def parse_portfolio(raw_output: str) -> Dict[str, Any]:
     Returns:
         dict: Structured portfolio data (always returns valid structure)
     """
+    raw_output = trim_preamble(raw_output)
+
     # Initialize with safe defaults
     structured_data = {
         "stocks": [],

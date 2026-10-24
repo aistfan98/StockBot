@@ -1,7 +1,7 @@
 import os
 import boto3
 
-from parser import parse_portfolio
+from parser import parse_portfolio, trim_preamble
 from storage import save_portfolio_to_dynamodb
 
 sns = boto3.client("sns")
@@ -13,7 +13,7 @@ def handler(event, context):
 
     Receives portfolio data from the invocation Lambda and:
     1. Sends email notification with raw output. Sending the email before any
-    processing to ensure subscribers always get notified regardles of
+    processing to ensure subscribers always get notified regardless of
     parsing/storage success.
     2. Parses the raw output into structured data
     3. Saves parsed portfolio to DynamoDB
@@ -52,9 +52,10 @@ def handler(event, context):
     email_sent = False
     try:
         if raw_output is not None:
+            formatted_output = trim_preamble(raw_output)
             response = sns.publish(
                 TopicArn=topic_arn,
-                Message=raw_output,
+                Message=formatted_output,
                 Subject=subject
             )
             email_sent = True
